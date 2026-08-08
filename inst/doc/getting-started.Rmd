@@ -1,0 +1,162 @@
+---
+title: "Getting Started with densemlp"
+output:
+  pdf_document:
+    toc: true
+    number_sections: true
+vignette: >
+  %\VignetteIndexEntry{Getting Started with densemlp}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+can_use_torch <- requireNamespace("torch", quietly = TRUE) &&
+  isTRUE(torch::torch_is_installed())
+
+knitr::opts_chunk$set(
+  echo = TRUE,
+  eval = can_use_torch,
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 6,
+  fig.height = 4
+)
+```
+
+```{r}
+library(densemlp)
+```
+
+`densemlp` trains dense feed-forward multilayer perceptrons for tabular data.
+It accepts a formula and data frame, preprocesses numeric and categorical
+predictors, and returns a `densemlp_fit` object with methods for prediction,
+plotting, metrics, tuning, and variable importance.
+
+The models implemented in `densemlp` are dense feed-forward multilayer
+perceptrons. Optional components such as dropout, batch normalization,
+residual connections, gated blocks, and input projection extend the basic
+dense multilayer perceptron architecture but do not change the model class
+into a convolutional, recurrent, transformer, or tree-based model.
+
+`task` is optional in the main API. When it is set to `"auto"` or omitted, the
+task is inferred from the outcome. Use it only when you need to override that
+inference.
+
+This vignette documents version `0.5.0`.
+
+This vignette assumes the package is installed or loaded with
+`pkgload::load_all(".")`. Do not source individual files such as `R/densemlp.R`
+because exported functions rely on helpers loaded through the package
+namespace.
+
+`densemlp` implements dense feed-forward multilayer perceptrons for tabular
+data. Each hidden block is centered on a fully connected transformation,
+optionally combined with activation functions, dropout, batch normalization,
+residual connections, gated mechanisms, and input projection.
+
+## Classification
+
+For classification, use a factor outcome. The task is inferred from the
+outcome type, so `task` can usually be omitted.
+
+```{r classification-fit}
+fit <- densemlp(
+  Species ~ .,
+  data = iris,
+  epochs = 10,
+  patience = 3,
+  verbose = FALSE,
+  seed = 1
+)
+
+fit
+```
+
+Class predictions are returned as factors with the same levels as the training
+outcome.
+
+```{r classification-predictions}
+predict(fit, iris[1:5, ], type = "class")
+round(predict(fit, iris[1:5, ], type = "prob"), 3)
+```
+
+Use task-aware metrics to summarize predictions.
+
+```{r classification-metrics}
+pred <- predict(fit, iris, type = "class")
+densemlp_metrics(iris$Species, pred)
+```
+
+## Regression
+
+For regression, use a numeric outcome. The task is inferred automatically for
+numeric outcomes.
+
+```{r regression-fit}
+fit_reg <- densemlp(
+  mpg ~ disp + hp + wt,
+  data = mtcars,
+  epochs = 10,
+  patience = 3,
+  verbose = FALSE,
+  seed = 2
+)
+
+fit_reg
+```
+
+```{r regression-predictions}
+pred_reg <- predict(fit_reg, mtcars, type = "response")
+head(round(pred_reg, 2))
+densemlp_metrics(mtcars$mpg, pred_reg)
+```
+
+## Training Diagnostics
+
+The fitted object stores training history, which can be displayed directly or
+through the `ggplot2::autoplot()` method.
+
+```{r plot-history}
+plot_history(fit)
+```
+
+```{r autoplot-history}
+ggplot2::autoplot(fit)
+```
+
+## Tuning
+
+`tune_densemlp()` evaluates a grid of hyperparameters and, by default, refits the
+best configuration on the supplied data.
+
+```{r tuning}
+tuned <- tune_densemlp(
+  Species ~ .,
+  data = iris,
+  grid = list(
+    hidden_units = list(c(8), c(16, 8)),
+    activation = c("relu"),
+    dropout = c(0),
+    batch_size = c(8),
+    lr = c(1e-3),
+    epochs = c(10)
+  ),
+  patience = 3,
+  seed = 3,
+  verbose = FALSE
+)
+
+tuned$results
+```
+
+## Permutation Importance
+
+Permutation importance estimates how much a metric changes after shuffling each
+predictor.
+
+```{r permutation-importance}
+importance <- perm_importance(fit, iris[, -5], iris$Species)
+importance$data
+plot(importance)
+```
